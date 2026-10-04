@@ -99,6 +99,9 @@ class CuktechMQTTCoordinator:
         self._ble_timeout_task: asyncio.Task | None = None
         self._charge_events: list[dict] = []
         self._charge_event_callbacks: list = []
+        # --- energy accumulation (kWh) via integrating total power ---
+        self._energy_wh: float = 0.0
+        self._energy_last_update: float | None = None
 
     # ---------- helpers to build concrete topics from configured prefix ----------
     def _topic(self, suffix: str) -> str:
@@ -377,6 +380,37 @@ class CuktechMQTTCoordinator:
                 "%s (failure #%d)%s", message, self._health_failures, f": {err}" if err else ""
             )
 
+    # --- Energy accumulation (integrate total power -> kWh) ---
+
+    def _total_power_w(self) -> float:
+        """Return sum of active port power in watts."""
+        total = 0.0
+        for piid in PORT_MAP.values():
+            pd = self._port_data.get(str(piid))
+            if pd and pd.get("active"):
+                try:
+                    total += float(pd.get("power", 0))
+                except (TypeError, ValueError):
+                    pass
+        return total
+
+    def _integrate_energy(self) -> None:
+        """Integrate total power into accumulated energy (Wh) on each port update."""
+        now = self.hass.loop.time()
+        if self._energy_last_update is None:
+            self._energy_last_update = now
+            return
+        dt = now - self._energy_last_update
+        self._energy_last_update = now
+        if dt <= 0 or dt > 600:  # ignore large gaps (restarts / long silence)
+            return
+        self._energy_wh += self._total_power_w() * dt / 3600.0
+
+    @property
+    def total_energy_kwh(self) -> float | None:
+        """Return accumulated energy in kWh."""
+        return round(self._energy_wh / 1000.0, 3)
+
     # --- MQTT message handlers ---
 
     @callback
@@ -392,6 +426,7 @@ class CuktechMQTTCoordinator:
                     port_name, payload.get("voltage"), payload.get("current"),
                     payload.get("power"), payload.get("protocol"))
                 self._port_data[str(piid)] = payload
+                self._integrate_energy()
                 self._notify_callbacks(self._port_callbacks)
         except json.JSONDecodeError as err:
             _LOGGER.debug("Port JSON parse error: %s", err)
