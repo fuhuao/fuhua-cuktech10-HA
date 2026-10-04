@@ -9,9 +9,15 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfElectricCurrent, UnitOfElectricPotential, UnitOfPower
+from homeassistant.const import (
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfEnergy,
+    UnitOfPower,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import CuktechMQTTCoordinator
 from .base_entity import CuktechBaseEntity, CB_TYPE_PORT
@@ -33,6 +39,7 @@ async def async_setup_entry(
         entities.append(CuktechPortProtocolSensor(coord, entry, piid, pname))
 
     entities.append(CuktechTotalPowerSensor(coord, entry))
+    entities.append(CuktechEnergySensor(coord, entry))
     async_add_entities(entities)
 
 
@@ -111,6 +118,36 @@ class CuktechTotalPowerSensor(CuktechBaseEntity, SensorEntity):
             if pd and pd.get("active"):
                 total += pd.get("power", 0)
         return round(total, 1)
+
+
+class CuktechEnergySensor(CuktechBaseEntity, SensorEntity, RestoreEntity):
+    """累计电量传感器（kWh）。集成内部对 Total Power 积分，供能源面板统计用电量。"""
+
+    _attr_name = "Total Energy"
+    _attr_icon = "mdi:counter"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, coord: CuktechMQTTCoordinator, entry: ConfigEntry) -> None:
+        """Initialize the energy sensor."""
+        self._attr_unique_id = f"{entry.entry_id}_total_energy"
+        super().__init__(coord, entry, CB_TYPE_PORT)
+
+    @property
+    def native_value(self) -> float | None:
+        """Return accumulated energy in kWh."""
+        return self.coordinator.total_energy_kwh
+
+    async def async_added_to_hass(self) -> None:
+        """Restore last accumulated energy across restarts."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state not in (None, "", "unknown", "unavailable"):
+            try:
+                self.coordinator._energy_wh = float(last.state) * 1000.0
+            except (TypeError, ValueError):
+                pass
 
 
 class CuktechPortProtocolSensor(CuktechBaseEntity, SensorEntity):
