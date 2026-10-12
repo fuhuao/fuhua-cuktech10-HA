@@ -1,0 +1,92 @@
+"""Constants for CUKTECH Charger integration."""
+DOMAIN = "cuktech_charger"
+CONF_SERVER_URL = "server_url"
+CONF_TOPIC_PREFIX = "topic_prefix"
+DEFAULT_SERVER_URL = "http://192.168.1.100"
+DEFAULT_TOPIC_PREFIX = "cuktech/charger"
+
+# MQTT Topic TEMPLATES (relative to user-provided TOPIC_PREFIX).
+# Do NOT use them directly as strings; the coordinator builds concrete
+# topics by joining self.topic_prefix with the suffixes below.
+TOPIC_SUFFIX_PORT = "port"                       # subscribe: <prefix>/port/c1..c3/a | publish cmd: <prefix>/port
+TOPIC_SUFFIX_SETTINGS = "settings"               # subscribe: <prefix>/settings
+TOPIC_SUFFIX_STATUS = "status"                   # subscribe: <prefix>/status
+TOPIC_SUFFIX_SET = "set"                         # publish SET: <prefix>/set  {"piid":N,"value":V}
+TOPIC_SUFFIX_BLE = "ble"                         # publish BLE: <prefix>/ble  {"enabled":bool}
+TOPIC_SUFFIX_CHARGE_EVENT = "charge_event"       # subscribe: <prefix>/charge_event
+
+# Port mapping
+PORT_MAP = {"c1": 1, "c2": 2, "c3": 3, "a": 4}
+PORT_NAMES = {1: "C1", 2: "C2", 3: "C3", 4: "A"}
+
+# PIID names from the MIOT spec
+PIID_NAMES = {
+    1: "C1口数据",
+    2: "C2口数据",
+    3: "C3口数据",
+    4: "A口数据",
+    5: "场景模式",
+    6: "息屏时间",
+    7: "协议控制",
+    8: "倒计时设置",
+    9: "C1口倒计时",
+    10: "C2口倒计时",
+    11: "C3口倒计时",
+    12: "A口倒计时",
+    13: "语言",
+    14: "进入界面",
+    15: "USB-A小电流",
+    16: "端口控制",
+    19: "空闲息屏",
+    20: "屏幕方向锁",
+}
+
+# PIID display values
+PIID_DISPLAY = {
+    5: {1: "AI模式", 2: "数码生态", 3: "单口模式", 4: "均衡模式"},
+    # PIID 6 (screen_save_time): 与米家插件一致 (raw value -> 含义)
+    # 1=5分钟, 2=10分钟, 3=30分钟, 4=常亮, 5=1分钟。value 0 不是有效设备值。
+    6: {1: "5分钟", 2: "10分钟", 3: "30分钟", 4: "常亮", 5: "1分钟"},
+    7: None,  # PIID 7 = bit flags (SCP/MiPPS/UFCS), 不需要显示映射
+    13: {0: "English", 1: "中文"},
+    15: {0: "关闭", 1: "开启"},
+    19: {0: "关闭", 1: "开启"},
+    20: {0: "关闭", 1: "开启"},
+}
+
+# Select options for each setting
+SELECT_PIIDS = {
+    5: {"name": "场景模式", "icon": "mdi:cog", "options": ["AI模式", "数码生态", "单口模式", "均衡模式"]},
+    6: {"name": "息屏时间", "icon": "mdi:monitor", "options": ["1分钟", "5分钟", "10分钟", "30分钟", "常亮"]},
+    13: {"name": "语言", "icon": "mdi:translate", "options": ["English", "中文"]},
+}
+
+# Derive option map from SELECT_PIIDS and PIID_DISPLAY (keep first match for duplicates)
+SELECT_OPTION_MAP = {}
+for piid, cfg in SELECT_PIIDS.items():
+    display = PIID_DISPLAY.get(piid, {})
+    option_map = {}
+    for k, v in display.items():
+        if v in cfg["options"] and v not in option_map:
+            option_map[v] = k
+    SELECT_OPTION_MAP[piid] = option_map
+
+# Protocol switch bit definitions (PIID 21)
+# c1: bit0=PD, bit1=PPS, bit2=UFCS, bit3=保留(固定1)
+# c2: bit8=PD, bit9=PPS, bit10=UFCS, bit11=保留(固定1)
+# c3: bit16=UFCS, bit17=SCP
+# a:  bit24=UFCS, bit25=SCP
+PROTOCOL_BITS = {
+    "c1": {"pd": 0, "pps": 1, "ufcs": 2},
+    "c2": {"pd": 8, "pps": 9, "ufcs": 10},
+    "c3": {"ufcs": 16, "scp": 17},
+    "a":  {"ufcs": 24, "scp": 25},
+}
+
+# Device info
+DEVICE_INFO = {
+    "name": "酷态科10号超级电能充Ultra 充电器",
+    "manufacturer": "CUKTECH",
+    "model": "njcuk.fitting.ad1204",
+    "sw_version": "",
+}
