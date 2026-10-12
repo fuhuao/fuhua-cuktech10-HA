@@ -537,9 +537,10 @@ class CuktechMQTTCoordinator:
                     self._update_availability()
                     if self._available and not was_available:
                         _LOGGER.info("BLE server is now available (HTTP)")
-                    # Fallback: also read connection status and device info from HTTP if MQTT not connected
-                    if not self._mqtt_connected:
-                        await self._async_health_check_parse_body(resp)
+                    # Parse status body (device info, BLE state)
+                    await self._async_health_check_parse_body(resp)
+                    # Also fetch real-time port data via HTTP (MQTT port publish may stall)
+                    await self._async_fetch_ports_http(session)
                 else:
                     self._log_health_failure(
                         f"BLE server returned HTTP status {resp.status}"
@@ -548,6 +549,28 @@ class CuktechMQTTCoordinator:
         except Exception as err:
             self._log_health_failure("BLE server HTTP health check failed", str(err))
             self._available = self._mqtt_connected
+
+    async def _async_fetch_ports_http(self, session) -> None:
+        """Fetch real-time port data from ESP32 HTTP API and update coordinator state."""
+        try:
+            url = f"{self.server_url}/api/ports"
+            async with session.get(url, timeout=10) as resp:
+                if resp.status != 200:
+                    return
+                ports = await resp.json()
+                if not isinstance(ports, list):
+                    return
+                for p in ports:
+                    port_name = str(p.get("port", "")).lower()
+                    piid = PORT_MAP.get(port_name)
+                    if piid is None:
+                        continue
+                    self._port_data[str(piid)] = p
+                # 每次都积分（时间在流逝，功率不变也要累计）
+                self._integrate_energy()
+                self._notify_callbacks(self._port_callbacks)
+        except Exception as err:
+            _LOGGER.debug("HTTP fetch /api/ports failed: %s", err)
 
     async def _async_health_check_parse_body(self, resp) -> None:
         """Parse health check JSON body and sync device info."""
