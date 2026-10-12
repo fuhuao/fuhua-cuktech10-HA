@@ -32,21 +32,20 @@ def generate_unique_id(server_url: str) -> str:
 
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, str]:
-    """Validate the user input allows us to connect.
+    """Validate the user input.
 
-    Returns a dict with "title" on success, raises ValueError on failure.
+    HTTP check is optional - MQTT works independently.
     """
     server_url = data.get(CONF_SERVER_URL, DEFAULT_SERVER_URL)
-    session = async_get_clientsession(hass)
+    # Try HTTP check, but don't fail if it doesn't work
     try:
+        session = async_get_clientsession(hass)
         url = f"{server_url}/api/status"
-        resp = await session.get(url, timeout=10)
-        if resp.status != 200:
-            raise ValueError(f"Server returned status {resp.status}")
-    except ValueError:
-        raise
+        resp = await session.get(url, timeout=5)
+        if resp.status == 200:
+            _LOGGER.info("HTTP check passed: %s", server_url)
     except Exception as err:
-        raise ValueError(f"Cannot connect to server: {err}") from err
+        _LOGGER.warning("HTTP check failed (MQTT will still work): %s", err)
     return {"title": data.get(CONF_NAME, "CUKTECH Charger")}
 
 
